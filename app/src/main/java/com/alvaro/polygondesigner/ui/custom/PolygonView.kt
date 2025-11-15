@@ -5,13 +5,21 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 import com.alvaro.polygondesigner.model.Point
+import kotlin.math.hypot
 
 class PolygonView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null, defStyle: Int = 0
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyle: Int = 0
 ) : View(context, attrs, defStyle) {
-    private var points: List<Point> = emptyList()
+
+    private var points: MutableList<Point> = mutableListOf()
+    private var draggingIndex: Int? = null
+
+    private val pointRadius = 40f   // para seleccionar más fácil
 
     private val linePaint = Paint().apply {
         color = 0xFF000000.toInt()
@@ -27,7 +35,7 @@ class PolygonView @JvmOverloads constructor(
     }
 
     fun setPoints(p: List<Point>) {
-        points = p
+        points = p.map { Point(it.x, it.y) }.toMutableList()
         invalidate()
     }
 
@@ -39,24 +47,67 @@ class PolygonView @JvmOverloads constructor(
         val centerX = width / 2f
         val centerY = height / 2f
 
-        val scaled = points.map {
-            Point(it.x + centerX, it.y + centerY)
-        }
+        val scaled = points.map { Point(it.x + centerX, it.y + centerY) }
 
-        // Dibuja líneas del polígono
+        drawPolygon(canvas, scaled)
+        drawPoints(canvas, scaled)
+    }
+
+    private fun drawPolygon(canvas: Canvas, scaled: List<Point>) {
         val path = Path()
         path.moveTo(scaled[0].x, scaled[0].y)
 
         for (i in 1 until scaled.size) {
             path.lineTo(scaled[i].x, scaled[i].y)
         }
+
         path.close()
-
         canvas.drawPath(path, linePaint)
+    }
 
-        // Dibuja los puntos
+    private fun drawPoints(canvas: Canvas, scaled: List<Point>) {
         scaled.forEach {
-            canvas.drawCircle(it.x, it.y, 18f, pointPaint)
+            canvas.drawCircle(it.x, it.y, 20f, pointPaint)
         }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val centerX = width / 2f
+        val centerY = height / 2f
+
+        val touchX = event.x - centerX
+        val touchY = event.y - centerY
+
+        when (event.action) {
+
+            MotionEvent.ACTION_DOWN -> {
+                draggingIndex = findClosestPoint(touchX, touchY)
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                draggingIndex?.let { index ->
+                    points[index].x = touchX
+                    points[index].y = touchY
+                    invalidate()
+                }
+            }
+
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> {
+                draggingIndex = null
+            }
+        }
+
+        return true
+    }
+
+    private fun findClosestPoint(tx: Float, ty: Float): Int? {
+        points.forEachIndexed { index, point ->
+            val dist = hypot(point.x - tx, point.y - ty)
+            if (dist <= pointRadius) {
+                return index
+            }
+        }
+        return null
     }
 }
