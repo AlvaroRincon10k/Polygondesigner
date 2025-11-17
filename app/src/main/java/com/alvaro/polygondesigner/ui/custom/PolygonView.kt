@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import com.alvaro.polygondesigner.model.Point
 import kotlin.math.hypot
+import kotlin.math.min
 
 class PolygonView @JvmOverloads constructor(
     context: Context,
@@ -19,7 +20,7 @@ class PolygonView @JvmOverloads constructor(
     private var points: MutableList<Point> = mutableListOf()
     private var draggingIndex: Int? = null
 
-    private val pointRadius = 40f   // para seleccionar más fácil
+    private val pointRadius = 40f
 
     private val linePaint = Paint().apply {
         color = 0xFF000000.toInt()
@@ -34,8 +35,11 @@ class PolygonView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
-    fun setPoints(p: List<Point>) {
-        points = p.map { Point(it.x, it.y) }.toMutableList()
+    private var initialized = false
+
+    fun setPoints(input: List<Point>) {
+        points = input.map { Point(it.x, it.y) }.toMutableList()
+        initialized = false
         invalidate()
     }
 
@@ -44,70 +48,81 @@ class PolygonView @JvmOverloads constructor(
 
         if (points.isEmpty()) return
 
-        val centerX = width / 2f
-        val centerY = height / 2f
+        if (!initialized) {
+            scalePolygonToFit()
+            initialized = true
+        }
 
-        val scaled = points.map { Point(it.x + centerX, it.y + centerY) }
-
-        drawPolygon(canvas, scaled)
-        drawPoints(canvas, scaled)
+        drawPolygon(canvas)
     }
 
-    private fun drawPolygon(canvas: Canvas, scaled: List<Point>) {
-        val path = Path()
-        path.moveTo(scaled[0].x, scaled[0].y)
+    private fun scalePolygonToFit() {
+        val minX = points.minOf { it.x }
+        val maxX = points.maxOf { it.x }
+        val minY = points.minOf { it.y }
+        val maxY = points.maxOf { it.y }
 
-        for (i in 1 until scaled.size) {
-            path.lineTo(scaled[i].x, scaled[i].y)
+        val widthPoly = maxX - minX
+        val heightPoly = maxY - minY
+
+        val scale = 0.7f * min(width / widthPoly, height / heightPoly)
+
+        val offsetX = width / 2f
+        val offsetY = height / 2f
+
+        val centerX = minX + widthPoly / 2f
+        val centerY = minY + heightPoly / 2f
+
+        points.forEach { p ->
+            p.x = (p.x - centerX) * scale + offsetX
+            p.y = (p.y - centerY) * scale + offsetY
+        }
+    }
+
+    private fun drawPolygon(canvas: Canvas) {
+        val path = Path()
+        path.moveTo(points[0].x, points[0].y)
+
+        for (i in 1 until points.size) {
+            path.lineTo(points[i].x, points[i].y)
         }
 
         path.close()
         canvas.drawPath(path, linePaint)
-    }
 
-    private fun drawPoints(canvas: Canvas, scaled: List<Point>) {
-        scaled.forEach {
-            canvas.drawCircle(it.x, it.y, 20f, pointPaint)
+        for (p in points) {
+            canvas.drawCircle(p.x, p.y, 16f, pointPaint)
         }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val centerX = width / 2f
-        val centerY = height / 2f
-
-        val touchX = event.x - centerX
-        val touchY = event.y - centerY
-
         when (event.action) {
-
             MotionEvent.ACTION_DOWN -> {
-                draggingIndex = findClosestPoint(touchX, touchY)
+                draggingIndex = findClosestPoint(event.x, event.y)
             }
 
             MotionEvent.ACTION_MOVE -> {
-                draggingIndex?.let { index ->
-                    points[index].x = touchX
-                    points[index].y = touchY
+                draggingIndex?.let {
+                    points[it].x = event.x
+                    points[it].y = event.y
                     invalidate()
                 }
             }
 
             MotionEvent.ACTION_UP,
-            MotionEvent.ACTION_CANCEL -> {
-                draggingIndex = null
-            }
+            MotionEvent.ACTION_CANCEL -> draggingIndex = null
         }
-
         return true
     }
 
-    private fun findClosestPoint(tx: Float, ty: Float): Int? {
-        points.forEachIndexed { index, point ->
-            val dist = hypot(point.x - tx, point.y - ty)
-            if (dist <= pointRadius) {
+    private fun findClosestPoint(x: Float, y: Float): Int? {
+        points.forEachIndexed { index, p ->
+            if (hypot(p.x - x, p.y - y) <= pointRadius) {
                 return index
             }
         }
         return null
     }
+
+    fun getPoints(): List<Point> = points
 }
